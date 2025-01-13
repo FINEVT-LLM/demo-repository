@@ -2,7 +2,6 @@ import streamlit as st
 from langchain_core.messages.chat import ChatMessage
 from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import StrOutputParser
-from langchain_teddynote.prompts import load_prompt
 from dotenv import load_dotenv
 import os
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -11,6 +10,7 @@ from langchain_community.vectorstores import FAISS, Milvus, Chroma
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_core.prompts import ChatPromptTemplate
 
 # API KEY 정보 불러오기
 dotenv_path = "/home/seongeonkim/Seongeon/config/.env"
@@ -40,9 +40,7 @@ with st.sidebar:
     selected_model = st.selectbox(
         "LLM 선택", ["gpt-4o", "gpt-4o-turbo", "gpt-4o-mini"], index=0
     )
-    selected_prompt = st.selectbox(
-        "프롬프트 선택", ["FineVT Basic Prompt", "FineVT Advanced Prompt"]
-    )
+    selected_prompt = st.selectbox("프롬프트 선택", ["FineVT Advanced Prompt"])
     selected_vectordb = st.selectbox(
         "Vector DB 선택", ["FAISS", "Milvus(현재는 불가능)", "Chroma"]
     )
@@ -94,10 +92,38 @@ def embed_file(file, vectordb=selected_vectordb):
 
 # 체인 생성
 def create_chain(retriever, model_name="gpt-4o", prompt_name="FineVT Basic Prompt"):
-    if prompt_name == "FineVT Basic Prompt":
-        prompt = load_prompt("prompts/pdf-rag_v0.yaml", encoding="utf-8")
-    elif prompt_name == "FineVT Advanced Prompt":
-        prompt = load_prompt("prompts/pdf-rag_v1.yaml", encoding="utf-8")
+    if prompt_name == "FineVT Advanced Prompt":
+        prompt = ChatPromptTemplate(
+            [
+                (
+                    "system",
+                    """You are an assistant for question-answering tasks. 
+                            Use the following pieces of retrieved context to answer the question. 
+                            If you don't know the answer, just say that you don't know. 
+                            Please write your answer in a markdown table format with the main points.
+                            Be sure to include your source and page numbers in your answer.
+                            Answer in Korean.""",
+                ),
+                (
+                    "user",
+                    """#Example Format:
+                        (brief summary of the answer)
+                        (table)
+                        (detailed answer to the question)
+                        
+                        **출처**
+                        - (page source and page number)
+
+                        #Question: 
+                        {question}
+                            
+                        #Context: 
+                        {context} 
+
+                        #Answer:""",
+                ),
+            ]
+        )
 
     llm = ChatOpenAI(model_name=model_name, temperature=0)
 
