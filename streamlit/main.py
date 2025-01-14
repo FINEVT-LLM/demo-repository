@@ -4,6 +4,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import StrOutputParser
 from dotenv import load_dotenv
 import os
+import requests
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_community.vectorstores import FAISS, Milvus, Chroma
@@ -71,19 +72,46 @@ def embed_file(file, vectordb=selected_vectordb):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
     split_documents = text_splitter.split_documents(docs)
 
-    embeddings = OpenAIEmbeddings()
+    class EmbeddingClient:
+        def __init__(self, api_url: str):
+            self.api_url = api_url
+
+        def __call__(self, text):
+            """
+            객체 호출 시 text embedding
+            """
+            return self.embed_query(text)
+
+        def embed_documents(self, texts, mode: str = "batch"):
+            """
+            Documnet 구조의 text 임베딩 및 반환
+            """
+            response = requests.post(
+                f"{self.api_url}/embed",
+                json={"texts": texts, "mode": mode},
+            )
+            if response.status_code == 200:
+                return response.json()["embeddings"]
+            else:
+                raise RuntimeError(
+                    f"API Error: {response.status_code}, {response.text}"
+                )
+
+        def embed_query(self, text):
+            """
+            단일 text 임베딩
+            """
+            return self.embed_documents([text])[0]
+
+    client = EmbeddingClient("http://127.0.0.1:8111")
+
+    # 벡터 데이터베이스 생성
     if vectordb == "FAISS":
-        vectorstore = FAISS.from_documents(
-            documents=split_documents, embedding=embeddings
-        )
+        vectorstore = FAISS.from_documents(documents=split_documents, embedding=client)
     elif vectordb == "Milvus(현재는 불가능)":
-        vectorstore = Milvus.from_documents(
-            documents=split_documents, embedding=embeddings
-        )
+        vectorstore = Milvus.from_documents(documents=split_documents, embedding=client)
     elif vectordb == "Chroma":
-        vectorstore = Chroma.from_documents(
-            documents=split_documents, embedding=embeddings
-        )
+        vectorstore = Chroma.from_documents(documents=split_documents, embedding=client)
 
     retriever = vectorstore.as_retriever()
 
